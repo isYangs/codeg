@@ -1221,7 +1221,10 @@ fn is_codeg_edit_temp_path(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn git_check_ignored_paths(repo_path: &str, paths: &[String]) -> Result<HashSet<String>, String> {
+fn git_check_ignored_paths(
+    repo_path: &str,
+    paths: &[String],
+) -> Result<HashSet<String>, AppCommandError> {
     if paths.is_empty() {
         return Ok(HashSet::new());
     }
@@ -1233,27 +1236,22 @@ fn git_check_ignored_paths(repo_path: &str, paths: &[String]) -> Result<HashSet<
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("failed to start git check-ignore: {e}"))?;
+        .map_err(AppCommandError::io)?;
 
     if let Some(mut stdin) = child.stdin.take() {
         for path in paths {
             stdin
                 .write_all(path.as_bytes())
-                .map_err(|e| format!("failed to write git check-ignore stdin: {e}"))?;
-            stdin
-                .write_all(&[0])
-                .map_err(|e| format!("failed to write git check-ignore stdin: {e}"))?;
+                .map_err(AppCommandError::io)?;
+            stdin.write_all(&[0]).map_err(AppCommandError::io)?;
         }
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("failed to read git check-ignore output: {e}"))?;
+    let output = child.wait_with_output().map_err(AppCommandError::io)?;
 
     // Exit code 1 means "no matches", which is expected.
     if !output.status.success() && output.status.code() != Some(1) {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git check-ignore failed: {}", stderr.trim()));
+        return Err(git_command_error("check-ignore", &output.stderr));
     }
 
     let mut ignored = HashSet::new();
@@ -1531,20 +1529,29 @@ fn run_file_watch_event_loop(
     }
 }
 
-fn resolve_tree_path(root: &Path, rel_path: &str) -> Result<PathBuf, String> {
+fn resolve_tree_path(root: &Path, rel_path: &str) -> Result<PathBuf, AppCommandError> {
     let rel = Path::new(rel_path);
     if rel.is_absolute() {
-        return Err("Path must be relative".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Path must be relative",
+        ));
     }
 
     for component in rel.components() {
         match component {
             Component::Normal(_) | Component::CurDir => {}
             Component::ParentDir => {
-                return Err("Path cannot contain '..'".to_string());
+                return Err(AppCommandError::new(
+                    AppErrorCode::InvalidInput,
+                    "Path cannot contain '..'",
+                ));
             }
             Component::RootDir | Component::Prefix(_) => {
-                return Err("Invalid path component".to_string());
+                return Err(AppCommandError::new(
+                    AppErrorCode::InvalidInput,
+                    "Invalid path component",
+                ));
             }
         }
     }
@@ -1552,16 +1559,25 @@ fn resolve_tree_path(root: &Path, rel_path: &str) -> Result<PathBuf, String> {
     Ok(root.join(rel))
 }
 
-fn validate_new_name(new_name: &str) -> Result<&str, String> {
+fn validate_new_name(new_name: &str) -> Result<&str, AppCommandError> {
     let trimmed = new_name.trim();
     if trimmed.is_empty() {
-        return Err("New name cannot be empty".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "New name cannot be empty",
+        ));
     }
     if trimmed == "." || trimmed == ".." {
-        return Err("Invalid file name".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Invalid file name",
+        ));
     }
     if trimmed.contains('/') || trimmed.contains('\\') {
-        return Err("New name cannot contain path separators".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "New name cannot contain path separators",
+        ));
     }
     Ok(trimmed)
 }
@@ -1781,28 +1797,32 @@ fn compute_etag(content: &[u8], metadata: &std::fs::Metadata) -> String {
     format!("{:016x}", hasher.finish())
 }
 
-fn ensure_path_in_workspace(root: &Path, target: &Path) -> Result<(), String> {
-    let canonical_root = std::fs::canonicalize(root)
-        .map_err(|e| format!("Unable to resolve workspace root: {e}"))?;
-    let canonical_target =
-        std::fs::canonicalize(target).map_err(|e| format!("Unable to resolve file path: {e}"))?;
+fn ensure_path_in_workspace(root: &Path, target: &Path) -> Result<(), AppCommandError> {
+    let canonical_root = std::fs::canonicalize(root).map_err(AppCommandError::io)?;
+    let canonical_target = std::fs::canonicalize(target).map_err(AppCommandError::io)?;
     if !canonical_target.starts_with(&canonical_root) {
-        return Err("Path is outside workspace root".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Path is outside workspace root",
+        ));
     }
     Ok(())
 }
 
-fn read_text_preview(target: &Path, limit: usize) -> Result<(String, bool), String> {
-    let metadata = std::fs::metadata(target).map_err(|e| e.to_string())?;
-    let mut file = File::open(target).map_err(|e| e.to_string())?;
+fn read_text_preview(target: &Path, limit: usize) -> Result<(String, bool), AppCommandError> {
+    let metadata = std::fs::metadata(target).map_err(AppCommandError::io)?;
+    let mut file = File::open(target).map_err(AppCommandError::io)?;
     let mut bytes = Vec::new();
     let mut limited_reader = (&mut file).take(limit as u64 + 1);
     limited_reader
         .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(AppCommandError::io)?;
 
     if bytes.iter().take(2_048).any(|b| *b == 0) {
-        return Err("Binary files are not supported in preview".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Binary files are not supported in preview",
+        ));
     }
 
     let truncated = bytes.len() > limit || metadata.len() > limit as u64;
@@ -1812,15 +1832,20 @@ fn read_text_preview(target: &Path, limit: usize) -> Result<(String, bool), Stri
     Ok((String::from_utf8_lossy(&bytes).to_string(), truncated))
 }
 
-fn atomic_write_text(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| format!("Cannot determine parent directory for {}", path.display()))?;
+fn atomic_write_text(path: &Path, bytes: &[u8]) -> Result<(), AppCommandError> {
+    let parent = path.parent().ok_or_else(|| {
+        AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Cannot determine parent directory for target file",
+        )
+        .with_detail(path.display().to_string())
+    })?;
     if !parent.exists() {
-        return Err(format!(
-            "Parent directory does not exist: {}",
-            parent.display()
-        ));
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Parent directory does not exist",
+        )
+        .with_detail(parent.display().to_string()));
     }
 
     let temp_path = parent.join(format!(
@@ -1830,21 +1855,18 @@ fn atomic_write_text(path: &Path, bytes: &[u8]) -> Result<(), String> {
     ));
     let existing_permissions = std::fs::metadata(path).ok().map(|m| m.permissions());
 
-    let write_result = (|| -> Result<(), String> {
+    let write_result = (|| -> Result<(), AppCommandError> {
         let mut temp = OpenOptions::new()
             .create_new(true)
             .write(true)
             .open(&temp_path)
-            .map_err(|e| format!("Failed to create temporary file: {e}"))?;
+            .map_err(AppCommandError::io)?;
 
-        temp.write_all(bytes)
-            .map_err(|e| format!("Failed to write temporary file: {e}"))?;
-        temp.sync_all()
-            .map_err(|e| format!("Failed to flush temporary file: {e}"))?;
+        temp.write_all(bytes).map_err(AppCommandError::io)?;
+        temp.sync_all().map_err(AppCommandError::io)?;
 
         if let Some(permissions) = existing_permissions {
-            std::fs::set_permissions(&temp_path, permissions)
-                .map_err(|e| format!("Failed to set temporary file permissions: {e}"))?;
+            std::fs::set_permissions(&temp_path, permissions).map_err(AppCommandError::io)?;
         }
 
         replace_file(&temp_path, path)?;
@@ -1860,12 +1882,12 @@ fn atomic_write_text(path: &Path, bytes: &[u8]) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-fn replace_file(temp_path: &Path, target_path: &Path) -> Result<(), String> {
-    std::fs::rename(temp_path, target_path).map_err(|e| format!("Failed to replace file: {e}"))
+fn replace_file(temp_path: &Path, target_path: &Path) -> Result<(), AppCommandError> {
+    std::fs::rename(temp_path, target_path).map_err(AppCommandError::io)
 }
 
 #[cfg(target_os = "windows")]
-fn replace_file(temp_path: &Path, target_path: &Path) -> Result<(), String> {
+fn replace_file(temp_path: &Path, target_path: &Path) -> Result<(), AppCommandError> {
     use std::os::windows::ffi::OsStrExt;
 
     use windows_sys::Win32::Storage::FileSystem::{
@@ -1892,52 +1914,52 @@ fn replace_file(temp_path: &Path, target_path: &Path) -> Result<(), String> {
     };
 
     if ok == 0 {
-        return Err(format!(
-            "Failed to atomically replace file: {}",
-            std::io::Error::last_os_error()
-        ));
+        return Err(AppCommandError::new(
+            AppErrorCode::IoError,
+            "Failed to atomically replace file",
+        )
+        .with_detail(std::io::Error::last_os_error().to_string()));
     }
 
     Ok(())
 }
 
 #[cfg(not(any(unix, target_os = "windows")))]
-fn replace_file(temp_path: &Path, target_path: &Path) -> Result<(), String> {
-    std::fs::rename(temp_path, target_path).map_err(|e| format!("Failed to replace file: {e}"))
+fn replace_file(temp_path: &Path, target_path: &Path) -> Result<(), AppCommandError> {
+    std::fs::rename(temp_path, target_path).map_err(AppCommandError::io)
 }
 
 #[cfg(unix)]
-fn sync_directory(path: &Path) -> Result<(), String> {
-    let dir = File::open(path).map_err(|e| format!("Failed to sync directory: {e}"))?;
-    dir.sync_all()
-        .map_err(|e| format!("Failed to sync directory: {e}"))
+fn sync_directory(path: &Path) -> Result<(), AppCommandError> {
+    let dir = File::open(path).map_err(AppCommandError::io)?;
+    dir.sync_all().map_err(AppCommandError::io)
 }
 
 #[cfg(not(unix))]
-fn sync_directory(_path: &Path) -> Result<(), String> {
+fn sync_directory(_path: &Path) -> Result<(), AppCommandError> {
     Ok(())
 }
 
-async fn run_file_io<T, F>(f: F) -> Result<T, String>
+async fn run_file_io<T, F>(f: F) -> Result<T, AppCommandError>
 where
     T: Send + 'static,
-    F: FnOnce() -> Result<T, String> + Send + 'static,
+    F: FnOnce() -> Result<T, AppCommandError> + Send + 'static,
 {
-    let _permit = FILE_IO_SEMAPHORE
-        .acquire()
-        .await
-        .map_err(|_| "File I/O runtime is unavailable".to_string())?;
+    let _permit = FILE_IO_SEMAPHORE.acquire().await.map_err(|_| {
+        AppCommandError::new(AppErrorCode::Unknown, "File I/O runtime is unavailable")
+    })?;
 
-    tokio::task::spawn_blocking(f)
-        .await
-        .map_err(|e| format!("File I/O task failed: {e}"))?
+    tokio::task::spawn_blocking(f).await.map_err(|e| {
+        AppCommandError::new(AppErrorCode::Unknown, "File I/O task failed")
+            .with_detail(e.to_string())
+    })?
 }
 
 #[tauri::command]
 pub async fn get_file_tree(
     path: String,
     max_depth: Option<usize>,
-) -> Result<Vec<FileTreeNode>, String> {
+) -> Result<Vec<FileTreeNode>, AppCommandError> {
     let root = PathBuf::from(&path);
     let depth = max_depth.unwrap_or(usize::MAX);
 
@@ -1959,7 +1981,10 @@ pub async fn get_file_tree(
             }
         })
     {
-        let entry = entry.map_err(|e| e.to_string())?;
+        let entry = entry.map_err(|e| {
+            AppCommandError::new(AppErrorCode::IoError, "Failed to walk file tree")
+                .with_detail(e.to_string())
+        })?;
         let entry_path = entry.path().to_path_buf();
 
         // Skip the root itself
@@ -2072,18 +2097,27 @@ pub async fn read_file_preview(
     root_path: String,
     path: String,
     max_bytes: Option<usize>,
-) -> Result<FilePreviewContent, String> {
+) -> Result<FilePreviewContent, AppCommandError> {
     let root = PathBuf::from(&root_path);
     if !root.exists() || !root.is_dir() {
-        return Err("Folder does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Folder does not exist",
+        ));
     }
 
     let target = resolve_tree_path(&root, &path)?;
     if !target.exists() {
-        return Err("File does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "File does not exist",
+        ));
     }
     if !target.is_file() {
-        return Err("Path is not a file".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Path is not a file",
+        ));
     }
     let limit = max_bytes
         .unwrap_or(FILE_PREVIEW_DEFAULT_MAX_BYTES)
@@ -2107,18 +2141,27 @@ pub async fn read_file_for_edit(
     root_path: String,
     path: String,
     max_bytes: Option<usize>,
-) -> Result<FileEditContent, String> {
+) -> Result<FileEditContent, AppCommandError> {
     let root = PathBuf::from(&root_path);
     if !root.exists() || !root.is_dir() {
-        return Err("Folder does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Folder does not exist",
+        ));
     }
 
     let target = resolve_tree_path(&root, &path)?;
     if !target.exists() {
-        return Err("File does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "File does not exist",
+        ));
     }
     if !target.is_file() {
-        return Err("Path is not a file".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Path is not a file",
+        ));
     }
 
     let limit = max_bytes
@@ -2128,7 +2171,7 @@ pub async fn read_file_for_edit(
 
     run_file_io(move || {
         ensure_path_in_workspace(&root, &target)?;
-        let metadata = std::fs::metadata(&target).map_err(|e| e.to_string())?;
+        let metadata = std::fs::metadata(&target).map_err(AppCommandError::io)?;
         let (content, truncated) = read_text_preview(&target, limit)?;
         let readonly = metadata.permissions().readonly() || truncated;
         let mtime_ms = file_mtime_ms(&metadata);
@@ -2159,54 +2202,76 @@ pub async fn save_file_content(
     path: String,
     content: String,
     expected_etag: Option<String>,
-) -> Result<FileSaveResult, String> {
+) -> Result<FileSaveResult, AppCommandError> {
     let root = PathBuf::from(&root_path);
     if !root.exists() || !root.is_dir() {
-        return Err("Folder does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Folder does not exist",
+        ));
     }
     if content.len() > FILE_EDIT_MAX_BYTES {
-        return Err(format!(
-            "File is too large to save in editor ({} bytes max)",
-            FILE_EDIT_MAX_BYTES
-        ));
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "File is too large to save in editor",
+        )
+        .with_detail(format!("max_bytes={FILE_EDIT_MAX_BYTES}")));
     }
 
     let target = resolve_tree_path(&root, &path)?;
     if !target.exists() {
-        return Err("File does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "File does not exist",
+        ));
     }
     if !target.is_file() {
-        return Err("Path is not a file".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Path is not a file",
+        ));
     }
     let path_for_response = path.clone();
 
     run_file_io(move || {
         ensure_path_in_workspace(&root, &target)?;
 
-        let link_meta = std::fs::symlink_metadata(&target).map_err(|e| e.to_string())?;
+        let link_meta = std::fs::symlink_metadata(&target).map_err(AppCommandError::io)?;
         if link_meta.file_type().is_symlink() {
-            return Err("Saving symlink targets is not supported".to_string());
+            return Err(AppCommandError::new(
+                AppErrorCode::InvalidInput,
+                "Saving symlink targets is not supported",
+            ));
         }
 
-        let before_meta = std::fs::metadata(&target).map_err(|e| e.to_string())?;
+        let before_meta = std::fs::metadata(&target).map_err(AppCommandError::io)?;
         if before_meta.permissions().readonly() {
-            return Err("File is read-only".to_string());
+            return Err(AppCommandError::new(
+                AppErrorCode::PermissionDenied,
+                "File is read-only",
+            ));
         }
 
-        let current_bytes = std::fs::read(&target).map_err(|e| e.to_string())?;
+        let current_bytes = std::fs::read(&target).map_err(AppCommandError::io)?;
         if current_bytes.iter().take(2_048).any(|b| *b == 0) {
-            return Err("Binary files are not supported in editor".to_string());
+            return Err(AppCommandError::new(
+                AppErrorCode::InvalidInput,
+                "Binary files are not supported in editor",
+            ));
         }
         let current_etag = compute_etag(&current_bytes, &before_meta);
         if let Some(expected) = expected_etag {
             if expected != current_etag {
-                return Err("File has changed on disk. Reload the file before saving.".to_string());
+                return Err(AppCommandError::new(
+                    AppErrorCode::InvalidInput,
+                    "File has changed on disk. Reload the file before saving.",
+                ));
             }
         }
 
         atomic_write_text(&target, content.as_bytes())?;
 
-        let after_meta = std::fs::metadata(&target).map_err(|e| e.to_string())?;
+        let after_meta = std::fs::metadata(&target).map_err(AppCommandError::io)?;
         let etag = compute_etag(content.as_bytes(), &after_meta);
         let mtime_ms = file_mtime_ms(&after_meta);
         let readonly = after_meta.permissions().readonly();
@@ -2252,44 +2317,67 @@ pub async fn save_file_copy(
     root_path: String,
     path: String,
     content: String,
-) -> Result<FileSaveResult, String> {
+) -> Result<FileSaveResult, AppCommandError> {
     let root = PathBuf::from(&root_path);
     if !root.exists() || !root.is_dir() {
-        return Err("Folder does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Folder does not exist",
+        ));
     }
     if content.len() > FILE_EDIT_MAX_BYTES {
-        return Err(format!(
-            "File is too large to save in editor ({} bytes max)",
-            FILE_EDIT_MAX_BYTES
-        ));
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "File is too large to save in editor",
+        )
+        .with_detail(format!("max_bytes={FILE_EDIT_MAX_BYTES}")));
     }
 
     let source = resolve_tree_path(&root, &path)?;
     if !source.exists() {
-        return Err("File does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "File does not exist",
+        ));
     }
     if !source.is_file() {
-        return Err("Path is not a file".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Path is not a file",
+        ));
     }
 
     run_file_io(move || {
         ensure_path_in_workspace(&root, &source)?;
 
-        let source_meta = std::fs::symlink_metadata(&source).map_err(|e| e.to_string())?;
+        let source_meta = std::fs::symlink_metadata(&source).map_err(AppCommandError::io)?;
         if source_meta.file_type().is_symlink() {
-            return Err("Saving symlink targets is not supported".to_string());
+            return Err(AppCommandError::new(
+                AppErrorCode::InvalidInput,
+                "Saving symlink targets is not supported",
+            ));
         }
 
         let parent = source
             .parent()
-            .ok_or_else(|| "Cannot determine parent directory for source file".to_string())?
+            .ok_or_else(|| {
+                AppCommandError::new(
+                    AppErrorCode::InvalidInput,
+                    "Cannot determine parent directory for source file",
+                )
+            })?
             .to_path_buf();
         ensure_path_in_workspace(&root, &parent)?;
 
         let source_name = source
             .file_name()
             .map(|value| value.to_string_lossy().to_string())
-            .ok_or_else(|| "Cannot determine source file name".to_string())?;
+            .ok_or_else(|| {
+                AppCommandError::new(
+                    AppErrorCode::InvalidInput,
+                    "Cannot determine source file name",
+                )
+            })?;
 
         let mut created_path: Option<PathBuf> = None;
         for attempt in 1..=9_999 {
@@ -2303,18 +2391,27 @@ pub async fn save_file_copy(
         }
 
         let created_path = created_path.ok_or_else(|| {
-            "Unable to create copy file: too many existing local copies".to_string()
+            AppCommandError::new(
+                AppErrorCode::AlreadyExists,
+                "Unable to create copy file: too many existing local copies",
+            )
         })?;
         atomic_write_text(&created_path, content.as_bytes())?;
 
-        let metadata = std::fs::metadata(&created_path).map_err(|e| e.to_string())?;
+        let metadata = std::fs::metadata(&created_path).map_err(AppCommandError::io)?;
         let etag = compute_etag(content.as_bytes(), &metadata);
         let mtime_ms = file_mtime_ms(&metadata);
         let readonly = metadata.permissions().readonly();
         let line_ending = detect_line_ending(content.as_bytes());
         let rel_path = created_path
             .strip_prefix(&root)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                AppCommandError::new(
+                    AppErrorCode::InvalidInput,
+                    "Failed to compute relative path for copy",
+                )
+                .with_detail(e.to_string())
+            })?
             .to_string_lossy()
             .replace('\\', "/");
 
@@ -2334,23 +2431,35 @@ pub async fn rename_file_tree_entry(
     root_path: String,
     path: String,
     new_name: String,
-) -> Result<String, String> {
+) -> Result<String, AppCommandError> {
     let root = PathBuf::from(&root_path);
     if !root.exists() || !root.is_dir() {
-        return Err("Folder does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Folder does not exist",
+        ));
     }
 
     let target = resolve_tree_path(&root, &path)?;
     if !target.exists() {
-        return Err("Target file does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Target file does not exist",
+        ));
     }
     if target == root {
-        return Err("Cannot rename workspace root".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Cannot rename workspace root",
+        ));
     }
 
-    let parent = target
-        .parent()
-        .ok_or_else(|| "Cannot rename path without parent".to_string())?;
+    let parent = target.parent().ok_or_else(|| {
+        AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Cannot rename path without parent",
+        )
+    })?;
     let validated_name = validate_new_name(&new_name)?;
     let next_path = parent.join(validated_name);
 
@@ -2358,39 +2467,60 @@ pub async fn rename_file_tree_entry(
         return Ok(path);
     }
     if next_path.exists() {
-        return Err("A file with this name already exists".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::AlreadyExists,
+            "A file with this name already exists",
+        ));
     }
 
-    std::fs::rename(&target, &next_path).map_err(|e| e.to_string())?;
+    std::fs::rename(&target, &next_path).map_err(AppCommandError::io)?;
 
     let rel = next_path
         .strip_prefix(&root)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| {
+            AppCommandError::new(
+                AppErrorCode::InvalidInput,
+                "Failed to compute relative path",
+            )
+            .with_detail(e.to_string())
+        })?
         .to_string_lossy()
         .to_string();
     Ok(rel)
 }
 
 #[tauri::command]
-pub async fn delete_file_tree_entry(root_path: String, path: String) -> Result<(), String> {
+pub async fn delete_file_tree_entry(
+    root_path: String,
+    path: String,
+) -> Result<(), AppCommandError> {
     let root = PathBuf::from(&root_path);
     if !root.exists() || !root.is_dir() {
-        return Err("Folder does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Folder does not exist",
+        ));
     }
 
     let target = resolve_tree_path(&root, &path)?;
     if !target.exists() {
-        return Err("Target file does not exist".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::NotFound,
+            "Target file does not exist",
+        ));
     }
     if target == root {
-        return Err("Cannot delete workspace root".to_string());
+        return Err(AppCommandError::new(
+            AppErrorCode::InvalidInput,
+            "Cannot delete workspace root",
+        ));
     }
 
-    let meta = std::fs::symlink_metadata(&target).map_err(|e| e.to_string())?;
+    let meta = std::fs::symlink_metadata(&target).map_err(AppCommandError::io)?;
     if meta.is_dir() {
-        std::fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
+        std::fs::remove_dir_all(&target).map_err(AppCommandError::io)?;
     } else {
-        std::fs::remove_file(&target).map_err(|e| e.to_string())?;
+        std::fs::remove_file(&target).map_err(AppCommandError::io)?;
     }
 
     Ok(())
@@ -2401,7 +2531,7 @@ pub async fn git_log(
     path: String,
     limit: Option<u32>,
     branch: Option<String>,
-) -> Result<Vec<GitLogEntry>, String> {
+) -> Result<Vec<GitLogEntry>, AppCommandError> {
     let limit_str = format!("-{}", limit.unwrap_or(100));
     let mut args = vec![
         "log".to_string(),
@@ -2419,11 +2549,10 @@ pub async fn git_log(
         .current_dir(&path)
         .output()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(AppCommandError::io)?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git log failed: {}", stderr.trim()));
+        return Err(git_command_error("log", &output.stderr));
     }
 
     let mut entries = Vec::<GitLogEntry>::new();
@@ -2480,7 +2609,10 @@ pub async fn git_log(
 }
 
 #[tauri::command]
-pub async fn git_commit_branches(path: String, commit: String) -> Result<Vec<String>, String> {
+pub async fn git_commit_branches(
+    path: String,
+    commit: String,
+) -> Result<Vec<String>, AppCommandError> {
     let contains_arg = format!("--contains={commit}");
     let output = crate::process::tokio_command("git")
         .args([
@@ -2493,11 +2625,10 @@ pub async fn git_commit_branches(path: String, commit: String) -> Result<Vec<Str
         .current_dir(&path)
         .output()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(AppCommandError::io)?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git for-each-ref failed: {}", stderr.trim()));
+        return Err(git_command_error("for-each-ref", &output.stderr));
     }
 
     let mut seen = HashSet::new();
@@ -2601,7 +2732,7 @@ fn parse_numstat_count(value: &str) -> u32 {
     value.parse::<u32>().unwrap_or(0)
 }
 
-async fn get_unpushed_hashes(path: &str) -> Result<Option<HashSet<String>>, String> {
+async fn get_unpushed_hashes(path: &str) -> Result<Option<HashSet<String>>, AppCommandError> {
     let upstream_output = crate::process::tokio_command("git")
         .args([
             "rev-parse",
@@ -2612,7 +2743,7 @@ async fn get_unpushed_hashes(path: &str) -> Result<Option<HashSet<String>>, Stri
         .current_dir(path)
         .output()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(AppCommandError::io)?;
 
     if !upstream_output.status.success() {
         return Ok(None);
@@ -2631,7 +2762,7 @@ async fn get_unpushed_hashes(path: &str) -> Result<Option<HashSet<String>>, Stri
         .current_dir(path)
         .output()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(AppCommandError::io)?;
 
     if !rev_list_output.status.success() {
         return Ok(None);
