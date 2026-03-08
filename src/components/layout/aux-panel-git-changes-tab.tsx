@@ -46,6 +46,7 @@ import {
   startFileTreeWatch,
   stopFileTreeWatch,
 } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import type { FileTreeChangedEvent, GitStatusEntry } from "@/lib/types"
 import {
   AlertDialog,
@@ -630,9 +631,7 @@ export function GitChangesTab() {
         clearTimeout(refreshTimerRef.current)
         refreshTimerRef.current = null
       }
-      if (unlisten) {
-        unlisten()
-      }
+      disposeTauriListener(unlisten, "AuxPanelGitChanges.fileTreeChanged")
       void stopFileTreeWatch(rootPath)
     }
   }, [fetchChanges, folder?.path, isChangesTabActive])

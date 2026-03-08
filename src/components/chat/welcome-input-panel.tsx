@@ -36,6 +36,7 @@ import {
   updateConversationStatus,
   updateConversationExternalId,
 } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import { AgentSelector } from "@/components/chat/agent-selector"
 import { LiveMessageBlock } from "@/components/chat/live-message-block"
 import { AgentPlanOverlay } from "@/components/chat/agent-plan-overlay"
@@ -448,7 +449,7 @@ export function WelcomeInputPanel({
       )
       .then((dispose) => {
         if (cancelled) {
-          dispose()
+          disposeTauriListener(dispose, "WelcomeInputPanel.agentsUpdated")
           return
         }
         unlisten = dispose
@@ -463,9 +464,7 @@ export function WelcomeInputPanel({
         clearTimeout(agentStatusRefreshTimerRef.current)
         agentStatusRefreshTimerRef.current = null
       }
-      if (unlisten) {
-        unlisten()
-      }
+      disposeTauriListener(unlisten, "WelcomeInputPanel.agentsUpdated")
     }
   }, [])
 

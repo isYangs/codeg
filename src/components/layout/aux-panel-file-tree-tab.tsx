@@ -35,6 +35,7 @@ import {
   startFileTreeWatch,
   stopFileTreeWatch,
 } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import { emitAttachFileToSession } from "@/lib/session-attachment-events"
 import type {
   FileTreeChangedEvent,
@@ -1961,9 +1962,7 @@ export function FileTreeTab() {
       pendingTreeRefreshRef.current = false
       pendingTreeRefreshNeedsStatusRef.current = false
       pendingStatusRefreshRef.current = false
-      if (unlisten) {
-        unlisten()
-      }
+      disposeTauriListener(unlisten, "AuxPanelFileTree.fileTreeChanged")
       void stopFileTreeWatch(rootPath)
     }
   }, [fetchTree, folder?.path, openFilePreview, t])

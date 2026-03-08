@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { terminalWrite, terminalResize } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import type { TerminalEvent } from "@/lib/types"
 import type { ITheme } from "@xterm/xterm"
 
@@ -186,8 +187,8 @@ export function TerminalView({
         themeObserver.disconnect()
         onDataDisposable.dispose()
         onResizeDisposable.dispose()
-        unlisten()
-        unlistenExit()
+        disposeTauriListener(unlisten, "TerminalView.output")
+        disposeTauriListener(unlistenExit, "TerminalView.exit")
         term.dispose()
         return
       }
@@ -221,8 +222,8 @@ export function TerminalView({
         themeObserver.disconnect()
         onDataDisposable.dispose()
         onResizeDisposable.dispose()
-        unlisten()
-        unlistenExit()
+        disposeTauriListener(unlisten, "TerminalView.output")
+        disposeTauriListener(unlistenExit, "TerminalView.exit")
         resizeObserver.disconnect()
         term.dispose()
         fitAddonRef.current = null

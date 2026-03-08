@@ -80,6 +80,7 @@ import {
   openCommitWindow,
   setFolderParentBranch,
 } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import type { GitBranchList } from "@/lib/types"
 import { toast } from "sonner"
 import { useFolderContext } from "@/contexts/folder-context"
@@ -161,7 +162,7 @@ export function BranchDropdown({
       })
 
     return () => {
-      if (unlisten) unlisten()
+      disposeTauriListener(unlisten, "BranchDropdown.gitCommitSucceeded")
     }
   }, [folder, onBranchChange, t])
 

@@ -11,6 +11,7 @@ import {
 } from "react"
 import { useTranslations } from "next-intl"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import {
   acpConnect,
   acpListAgents,
@@ -1420,11 +1421,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
     })
       .then((fn) => {
         if (cancelled) {
-          try {
-            fn()
-          } catch {
-            // ignore
-          }
+          disposeTauriListener(fn, "AcpConnectionsProvider.globalEvent")
         } else {
           unlisten = fn
           listenerReadyRef.current = true
@@ -1444,7 +1441,7 @@ export function AcpConnectionsProvider({ children }: { children: ReactNode }) {
         clearTimeout(flushTimerRef.current)
         flushTimerRef.current = null
       }
-      unlisten?.()
+      disposeTauriListener(unlisten, "AcpConnectionsProvider.globalEvent")
     }
   }, [bufferUnmappedEvent, handleMappedEvent, resolveListenerReadyWaiters])
 

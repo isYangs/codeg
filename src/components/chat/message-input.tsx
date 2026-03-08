@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { TauriEvent } from "@tauri-apps/api/event"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import { open } from "@tauri-apps/plugin-dialog"
 import Image from "next/image"
@@ -10,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { FileSearch, Plus, Send, Square, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { readFileBase64 } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import type {
   AvailableCommandInfo,
   PromptCapabilitiesInfo,
@@ -686,46 +688,109 @@ export function MessageInput({
   }, [appendResourceAttachments, attachmentTabId])
 
   useEffect(() => {
-    let unlisten: (() => void) | null = null
     let cancelled = false
+    const unlisteners: Array<() => void | Promise<void>> = []
 
-    getCurrentWebview()
-      .onDragDropEvent((event) => {
-        const host = containerRef.current
-        if (!host) return
-        const payload = event.payload
-        if (payload.type === "leave") {
-          setIsDragActive(false)
-          return
+    const cleanupListeners = () => {
+      for (const fn of unlisteners.splice(0)) {
+        disposeTauriListener(fn, "MessageInput.dragDrop")
+      }
+    }
+
+    type DragDropPayload =
+      | {
+          type: "enter" | "drop"
+          paths: string[]
+          position: { x: number; y: number }
         }
-        const inside = pointWithinElement(payload.position, host)
-        if (payload.type === "drop") {
-          setIsDragActive(false)
-          if (Date.now() - lastDomDropAtRef.current < 250) return
-          if (!inside || disabled || isPrompting) return
-          void appendPathsFromDrop(payload.paths).catch((error) => {
-            console.error("[MessageInput] drag drop paths failed:", error)
+      | {
+          type: "over"
+          position: { x: number; y: number }
+        }
+      | { type: "leave" }
+
+    const handlePayload = (payload: DragDropPayload) => {
+      const host = containerRef.current
+      if (!host) return
+      if (payload.type === "leave") {
+        setIsDragActive(false)
+        return
+      }
+      const inside = pointWithinElement(payload.position, host)
+      if (payload.type === "drop") {
+        setIsDragActive(false)
+        if (Date.now() - lastDomDropAtRef.current < 250) return
+        if (!inside || disabled || isPrompting) return
+        void appendPathsFromDrop(payload.paths).catch((error) => {
+          console.error("[MessageInput] drag drop paths failed:", error)
+        })
+        return
+      }
+      setIsDragActive(inside && !disabled && !isPrompting)
+    }
+
+    const setup = async () => {
+      const webview = getCurrentWebview()
+      try {
+        const unlistenEnter = await webview.listen<{
+          paths: string[]
+          position: { x: number; y: number }
+        }>(TauriEvent.DRAG_ENTER, (event) => {
+          if (cancelled) return
+          handlePayload({
+            type: "enter",
+            paths: event.payload.paths,
+            position: event.payload.position,
           })
-          return
-        }
-        setIsDragActive(inside && !disabled && !isPrompting)
-      })
-      .then((fn) => {
-        if (cancelled) {
-          fn()
-        } else {
-          unlisten = fn
-        }
-      })
-      .catch(() => {
+        })
+        unlisteners.push(unlistenEnter)
+
+        const unlistenOver = await webview.listen<{
+          position: { x: number; y: number }
+        }>(TauriEvent.DRAG_OVER, (event) => {
+          if (cancelled) return
+          handlePayload({
+            type: "over",
+            position: event.payload.position,
+          })
+        })
+        unlisteners.push(unlistenOver)
+
+        const unlistenDrop = await webview.listen<{
+          paths: string[]
+          position: { x: number; y: number }
+        }>(TauriEvent.DRAG_DROP, (event) => {
+          if (cancelled) return
+          handlePayload({
+            type: "drop",
+            paths: event.payload.paths,
+            position: event.payload.position,
+          })
+        })
+        unlisteners.push(unlistenDrop)
+
+        const unlistenLeave = await webview.listen(
+          TauriEvent.DRAG_LEAVE,
+          () => {
+            if (cancelled) return
+            handlePayload({ type: "leave" })
+          }
+        )
+        unlisteners.push(unlistenLeave)
+      } catch {
         // Ignore non-Tauri environments.
-      })
+      } finally {
+        if (cancelled) {
+          cleanupListeners()
+        }
+      }
+    }
+
+    void setup()
 
     return () => {
       cancelled = true
-      if (unlisten) {
-        unlisten()
-      }
+      cleanupListeners()
     }
   }, [appendPathsFromDrop, disabled, isPrompting])
 

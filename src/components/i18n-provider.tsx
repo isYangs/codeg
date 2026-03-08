@@ -23,6 +23,7 @@ import {
   type IntlLocale,
 } from "@/lib/i18n"
 import { getSystemLanguageSettings } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import { AppBootLoading } from "@/components/layout/app-boot-loading"
 import type { AppLocale, SystemLanguageSettings } from "@/lib/types"
 
@@ -162,7 +163,7 @@ export function AppI18nProvider({
       )
       .then((dispose) => {
         if (cancelled) {
-          dispose()
+          disposeTauriListener(dispose, "I18nProvider.languageSettings")
           return
         }
         unlisten = dispose
@@ -174,9 +175,7 @@ export function AppI18nProvider({
     return () => {
       cancelled = true
       window.removeEventListener("storage", onStorage)
-      if (unlisten) {
-        unlisten()
-      }
+      disposeTauriListener(unlisten, "I18nProvider.languageSettings")
     }
   }, [setLanguageSettings])
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { useTranslations } from "next-intl"
 import { usePlatform } from "@/hooks/use-platform"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import { cn } from "@/lib/utils"
 
 export function WindowControls() {
@@ -59,7 +60,7 @@ export function WindowControls() {
       if (resizeFrame !== null) {
         window.cancelAnimationFrame(resizeFrame)
       }
-      unlistenResize?.()
+      disposeTauriListener(unlistenResize, "WindowControls.resize")
     }
   }, [isWindows])
 

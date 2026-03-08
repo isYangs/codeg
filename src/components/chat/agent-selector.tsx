@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import { acpListAgents } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import type { AgentType, AcpAgentInfo } from "@/lib/types"
 import { AGENT_LABELS } from "@/lib/types"
 import { AgentIcon } from "@/components/agent-icon"
@@ -100,7 +101,7 @@ export function AgentSelector({
       )
       .then((dispose) => {
         if (cancelled) {
-          dispose()
+          disposeTauriListener(dispose, "AgentSelector.agentsUpdated")
           return
         }
         unlisten = dispose
@@ -112,9 +113,7 @@ export function AgentSelector({
     return () => {
       cancelled = true
       window.removeEventListener("focus", onWindowFocus)
-      if (unlisten) {
-        unlisten()
-      }
+      disposeTauriListener(unlisten, "AgentSelector.agentsUpdated")
     }
   }, [defaultAgentType])
 

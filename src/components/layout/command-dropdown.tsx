@@ -20,6 +20,7 @@ import {
   terminalKill,
   terminalList,
 } from "@/lib/tauri"
+import { disposeTauriListener } from "@/lib/tauri-listener"
 import type { FolderCommand, TerminalEvent } from "@/lib/types"
 import { CommandManageDialog } from "./command-manage-dialog"
 
@@ -66,7 +67,7 @@ export function CommandDropdown() {
   const clearRunningByTerminalId = useCallback((terminalId: string) => {
     const unlisten = exitUnlistenersRef.current.get(terminalId)
     if (unlisten) {
-      unlisten()
+      disposeTauriListener(unlisten, "CommandDropdown.terminalExit")
       exitUnlistenersRef.current.delete(terminalId)
     }
 
@@ -85,7 +86,7 @@ export function CommandDropdown() {
 
   const clearAllRunningStates = useCallback(() => {
     for (const unlisten of exitUnlistenersRef.current.values()) {
-      unlisten()
+      disposeTauriListener(unlisten, "CommandDropdown.terminalExit")
     }
     exitUnlistenersRef.current.clear()
     setRunningCommandTerminals({})
