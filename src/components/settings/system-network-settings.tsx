@@ -33,6 +33,7 @@ import {
   closeAppUpdate,
   getCurrentAppVersion,
   installAppUpdate,
+  normalizeAppUpdateError,
   relaunchApp,
 } from "@/lib/updater"
 
@@ -44,6 +45,8 @@ type LanguageSelectValue = "system" | AppLocale
 function isAppLocale(value: string): value is AppLocale {
   return APP_LANGUAGE_VALUES.includes(value as AppLocale)
 }
+
+type UpdateAction = "check" | "install"
 
 export function SystemNetworkSettings() {
   const t = useTranslations("SystemSettings")
@@ -172,6 +175,31 @@ export function SystemNetworkSettings() {
     }
   }, [appLanguage, languageSettings.language, setLanguageSettings, t])
 
+  const formatUpdateError = useCallback(
+    (error: unknown, action: UpdateAction): string => {
+      const { kind, rawMessage } = normalizeAppUpdateError(error)
+
+      switch (kind) {
+        case "source_unreachable":
+          return t("updateErrors.sourceUnavailable")
+        case "network":
+          return t("updateErrors.network")
+        case "download_failed":
+          return t("updateErrors.downloadFailed")
+        case "install_failed":
+          return t("updateErrors.installFailed")
+        case "unknown":
+        default:
+          if (action === "install") {
+            return t("updateErrors.installFailed")
+          }
+          console.error("[Settings] updater unknown error:", rawMessage)
+          return t("updateErrors.unknown")
+      }
+    },
+    [t]
+  )
+
   const checkForUpdates = useCallback(async () => {
     setCheckingUpdate(true)
     setUpdateError(null)
@@ -194,13 +222,14 @@ export function SystemNetworkSettings() {
         await closeAppUpdate(previousUpdate)
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = formatUpdateError(err, "check")
       setUpdateError(message)
       toast.error(t("checkUpdateFailed", { message }))
+      console.error("[Settings] check app update failed:", err)
     } finally {
       setCheckingUpdate(false)
     }
-  }, [availableUpdate, t])
+  }, [availableUpdate, formatUpdateError, t])
 
   const installUpdate = useCallback(async () => {
     if (!availableUpdate) return
@@ -213,13 +242,14 @@ export function SystemNetworkSettings() {
       toast.success(t("installSuccess"))
       await relaunchApp()
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+      const message = formatUpdateError(err, "install")
       setUpdateError(message)
       toast.error(t("installFailed", { message }))
+      console.error("[Settings] install app update failed:", err)
     } finally {
       setInstallingUpdate(false)
     }
-  }, [availableUpdate, t])
+  }, [availableUpdate, formatUpdateError, t])
 
   if (loading) {
     return (
@@ -393,24 +423,31 @@ export function SystemNetworkSettings() {
           )}
 
           <div className="flex flex-wrap items-center gap-2 justify-end">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={checkForUpdates}
-              disabled={checkingUpdate || installingUpdate}
-            >
-              {checkingUpdate ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t("checking")}
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  {t("checkUpdate")}
-                </>
-              )}
-            </Button>
+            {checkingUpdate ? (
+              <Button
+                key="checking-update"
+                size="sm"
+                variant="secondary"
+                disabled
+                aria-busy="true"
+                className="w-[9.5rem] justify-center transition-none"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {t("checking")}
+              </Button>
+            ) : (
+              <Button
+                key="check-update"
+                size="sm"
+                variant="secondary"
+                onClick={checkForUpdates}
+                disabled={installingUpdate}
+                className="w-[9.5rem] justify-center transition-none"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t("checkUpdate")}
+              </Button>
+            )}
 
             {availableUpdate && (
               <Button

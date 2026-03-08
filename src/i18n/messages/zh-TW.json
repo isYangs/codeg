@@ -112,7 +112,14 @@
     "alreadyLatest": "目前已是最新版本",
     "checkUpdateFailed": "檢查更新失敗：{message}",
     "installSuccess": "升級包已安裝，正在重新啟動應用",
-    "installFailed": "升級失敗：{message}"
+    "installFailed": "升級失敗：{message}",
+    "updateErrors": {
+      "sourceUnavailable": "無法連線更新來源，請檢查網路或代理設定後重試。",
+      "network": "網路連線異常，請檢查網路或代理設定後重試。",
+      "downloadFailed": "下載更新包失敗，請稍後再試。",
+      "installFailed": "安裝更新失敗，請關閉應用後重試。",
+      "unknown": "更新失敗，請稍後再試。"
+    }
   },
   "ShortcutSettings": {
     "sectionTitle": "快捷鍵",

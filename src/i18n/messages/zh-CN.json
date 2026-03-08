@@ -112,7 +112,14 @@
     "alreadyLatest": "当前已经是最新版本",
     "checkUpdateFailed": "检查更新失败：{message}",
     "installSuccess": "升级包已安装，正在重启应用",
-    "installFailed": "升级失败：{message}"
+    "installFailed": "升级失败：{message}",
+    "updateErrors": {
+      "sourceUnavailable": "无法连接更新源，请检查网络或代理设置后重试。",
+      "network": "网络连接异常，请检查网络或代理设置后重试。",
+      "downloadFailed": "下载更新包失败，请稍后重试。",
+      "installFailed": "安装更新失败，请关闭应用后重试。",
+      "unknown": "更新失败，请稍后重试。"
+    }
   },
   "ShortcutSettings": {
     "sectionTitle": "快捷键",

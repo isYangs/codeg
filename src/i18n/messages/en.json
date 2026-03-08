@@ -112,7 +112,14 @@
     "alreadyLatest": "You're on the latest version",
     "checkUpdateFailed": "Failed to check for updates: {message}",
     "installSuccess": "Update installed. Relaunching app.",
-    "installFailed": "Update failed: {message}"
+    "installFailed": "Update failed: {message}",
+    "updateErrors": {
+      "sourceUnavailable": "Cannot reach the update source. Check your network or proxy and try again.",
+      "network": "Network connection failed. Check your network or proxy and try again.",
+      "downloadFailed": "Failed to download update package. Please try again later.",
+      "installFailed": "Failed to install update. Please close the app and try again.",
+      "unknown": "Update failed. Please try again later."
+    }
   },
   "ShortcutSettings": {
     "sectionTitle": "Shortcuts",
