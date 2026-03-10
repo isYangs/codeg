@@ -402,8 +402,11 @@ export function MessageListView({
           overscan={10}
         />
       </MessageThread>
-      {showLiveMessage && liveMessage && (
-        <LiveTurnStats message={liveMessage} />
+      {showLiveMessage && liveMessage && connStatus === "prompting" && (
+        <LiveTurnStats
+          message={liveMessage}
+          isStreaming={connStatus === "prompting"}
+        />
       )}
       <AgentPlanOverlay
         key={agentPlanOverlayKey}

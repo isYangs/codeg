@@ -932,7 +932,12 @@ export function WelcomeInputPanel({
             overscan={10}
           />
         </MessageThread>
-        {showLive && <LiveTurnStats message={conn.liveMessage!} />}
+        {showLive && connStatus === "prompting" && (
+          <LiveTurnStats
+            message={conn.liveMessage!}
+            isStreaming={connStatus === "prompting"}
+          />
+        )}
         <AgentPlanOverlay
           message={conn.liveMessage}
           entries={historicalPlanEntries}

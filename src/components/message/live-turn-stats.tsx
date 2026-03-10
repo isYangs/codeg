@@ -12,6 +12,7 @@ import { FilePenLine, Timer, Wrench } from "lucide-react"
 
 interface LiveTurnStatsProps {
   message: LiveMessage
+  isStreaming?: boolean
 }
 
 interface LineChangeStats {
@@ -257,7 +258,10 @@ function extractLiveEditStats(message: LiveMessage): LiveEditStats {
   return { files: files.size, additions, deletions }
 }
 
-export function LiveTurnStats({ message }: LiveTurnStatsProps) {
+export function LiveTurnStats({
+  message,
+  isStreaming = true,
+}: LiveTurnStatsProps) {
   const locale = useLocale()
   const t = useTranslations("Folder.chat.liveTurnStats")
   const [elapsed, setElapsed] = useState(() => Date.now() - message.startedAt)
@@ -280,21 +284,23 @@ export function LiveTurnStats({ message }: LiveTurnStatsProps) {
 
   // Count tool calls from live content
   let toolCallCount = 0
-  let isThinking = false
+  let hasThinkingBlock = false
 
   for (const block of message.content) {
     if (block.type === "tool_call") {
       toolCallCount++
     } else if (block.type === "thinking") {
-      isThinking = true
+      hasThinkingBlock = true
     }
   }
 
-  // If the last block is thinking, mark as currently thinking
+  // Only active streams should show thinking/streaming state.
   const lastBlock = message.content[message.content.length - 1]
-  if (lastBlock?.type === "thinking") {
-    isThinking = true
-  }
+  const isThinking =
+    isStreaming &&
+    hasThinkingBlock &&
+    message.content.length <= 1 &&
+    lastBlock?.type === "thinking"
 
   const elapsedLabel =
     elapsed >= 60_000
@@ -304,7 +310,7 @@ export function LiveTurnStats({ message }: LiveTurnStatsProps) {
   return (
     <div className="flex h-8 shrink-0 items-center justify-center gap-3 px-4 text-xs leading-none text-muted-foreground">
       <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />
-      {isThinking && message.content.length <= 1 ? (
+      {isThinking ? (
         <span>{t("thinking")}</span>
       ) : (
         <span>{t("streaming")}</span>
