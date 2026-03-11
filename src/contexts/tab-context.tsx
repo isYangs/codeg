@@ -396,7 +396,23 @@ export function TabProvider({ children }: TabProviderProps) {
     [folder?.path, t]
   )
 
-  const [isTileMode, setIsTileMode] = useState(false)
+  const tileModeKey = `folder:${folderId}:tile-mode`
+  const [isTileMode, setIsTileMode] = useState(() => {
+    if (typeof window === "undefined") return false
+    try {
+      return localStorage.getItem(tileModeKey) === "true"
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(tileModeKey, String(isTileMode))
+    } catch {
+      /* ignore */
+    }
+  }, [isTileMode, tileModeKey])
 
   const closeTab = useCallback(
     (tabId: string) => {
@@ -454,8 +470,6 @@ export function TabProvider({ children }: TabProviderProps) {
         const kept = prev.filter((t) => t.id === tabId)
         return kept.length === prev.length ? prev : kept
       })
-      setIsTileMode(false)
-
       const tab = rawTabsRef.current.find((t) => t.id === tabId)
       if (tab) {
         setActiveTabId(tabId)
@@ -475,7 +489,6 @@ export function TabProvider({ children }: TabProviderProps) {
 
     const replacementTab = makeReplacementDraftTab(seedTab)
     setTabs([replacementTab])
-    setIsTileMode(false)
     setActiveTabId(replacementTab.id)
     syncFolderContext(replacementTab)
     activateConversationPane()
