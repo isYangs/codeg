@@ -570,6 +570,7 @@ const ConversationTabView = memo(function ConversationTabView({
   const messageListNode = (
     <MessageListView
       conversationId={effectiveConversationId}
+      agentType={selectedAgent}
       connStatus={connStatus}
       isActive={isActive}
       sendSignal={sendSignal}

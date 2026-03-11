@@ -24,12 +24,13 @@ import {
   buildPlanKey,
   extractLatestPlanEntriesFromMessages,
 } from "@/lib/agent-plan"
-import type { ConnectionStatus, SessionStats } from "@/lib/types"
+import type { AgentType, ConnectionStatus, SessionStats } from "@/lib/types"
 import { VirtualizedMessageThread } from "@/components/message/virtualized-message-thread"
 import { useStickToBottomContext } from "use-stick-to-bottom"
 
 interface MessageListViewProps {
   conversationId: number
+  agentType: AgentType
   connStatus?: ConnectionStatus | null
   isActive?: boolean
   sendSignal?: number
@@ -128,6 +129,7 @@ const AutoScrollOnSend = memo(function AutoScrollOnSend({
 
 export function MessageListView({
   conversationId,
+  agentType,
   connStatus,
   isActive = true,
   sendSignal = 0,
@@ -309,6 +311,7 @@ export function MessageListView({
       {liveMessage && connStatus === "prompting" && (
         <LiveTurnStats
           message={liveMessage}
+          agentType={agentType}
           isStreaming={connStatus === "prompting"}
         />
       )}

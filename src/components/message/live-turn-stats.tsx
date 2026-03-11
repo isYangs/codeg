@@ -9,9 +9,12 @@ import {
   estimateChangedLineStats,
 } from "@/lib/line-change-stats"
 import { FilePenLine, Timer, Wrench } from "lucide-react"
+import type { AgentType } from "@/lib/types"
+import { AgentIcon } from "@/components/agent-icon"
 
 interface LiveTurnStatsProps {
   message: LiveMessage
+  agentType: AgentType
   isStreaming?: boolean
 }
 
@@ -260,6 +263,7 @@ function extractLiveEditStats(message: LiveMessage): LiveEditStats {
 
 export function LiveTurnStats({
   message,
+  agentType,
   isStreaming = true,
 }: LiveTurnStatsProps) {
   const locale = useLocale()
@@ -309,7 +313,7 @@ export function LiveTurnStats({
 
   return (
     <div className="flex h-8 shrink-0 items-center justify-center gap-3 px-4 text-xs leading-none text-muted-foreground">
-      <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+      <AgentIcon agentType={agentType} className="h-3.5 w-3.5 animate-pulse" />
       {isThinking ? (
         <span>{t("thinking")}</span>
       ) : (
