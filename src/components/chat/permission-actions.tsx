@@ -5,18 +5,19 @@ import { Button } from "@/components/ui/button"
 import type { PermissionOptionInfo } from "@/lib/types"
 
 type PermissionActionVariant = "default" | "outline"
+type ActionLabelKey = (typeof KIND_LABEL_KEYS)[keyof typeof KIND_LABEL_KEYS]
 
 interface PermissionActionsProps {
   options: PermissionOptionInfo[]
   onRespond: (optionId: string) => void
 }
 
-const KIND_LABEL_KEYS: Record<string, string> = {
+const KIND_LABEL_KEYS = {
   allow_once: "allowOnce",
   allow_always: "allowAlways",
   reject_once: "rejectOnce",
   reject_always: "rejectAlways",
-}
+} as const
 
 const KIND_VARIANTS: Record<string, PermissionActionVariant> = {
   allow_once: "default",
@@ -42,8 +43,11 @@ export function PermissionActions({
         const variant: PermissionActionVariant =
           KIND_VARIANTS[opt.kind] ??
           (opt.kind.startsWith("reject") ? "outline" : "default")
-        const labelKey = KIND_LABEL_KEYS[opt.kind]
-        const label = labelKey ? t(labelKey as never) : opt.name
+        const labelKey =
+          KIND_LABEL_KEYS[opt.kind as keyof typeof KIND_LABEL_KEYS]
+        const label = labelKey ? t(labelKey as ActionLabelKey) : opt.name
+        // Only split label/detail for known kinds; unrecognized kinds
+        // render opt.name as-is since we have no translation key for them.
         const detail = labelKey ? extractDetail(opt.name) : undefined
 
         if (detail) {
@@ -51,7 +55,7 @@ export function PermissionActions({
             <Button
               key={opt.option_id}
               variant={variant}
-              className="h-9 max-w-full basis-full justify-start overflow-hidden text-left"
+              className="h-auto min-h-9 max-w-full basis-full justify-start overflow-hidden text-left"
               title={opt.name}
               onClick={() => onRespond(opt.option_id)}
             >
@@ -67,7 +71,7 @@ export function PermissionActions({
           <Button
             key={opt.option_id}
             variant={variant}
-            className="h-9"
+            className="h-auto min-h-9 whitespace-normal break-words"
             title={opt.name}
             onClick={() => onRespond(opt.option_id)}
           >
